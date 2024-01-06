@@ -30,7 +30,8 @@ class PSClient:
         await self.client.send(msg)
 
     async def recvMSG(self):
-        msg = self.client.recv()
+        msg = await self.client.recv()
+        print(msg)
         log.info(f"Received message from websocket :> {msg}")
         return msg
 
