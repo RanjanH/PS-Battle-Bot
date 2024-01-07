@@ -31,7 +31,7 @@ class PSClient:
 
     async def recvMSG(self):
         msg = await self.client.recv()
-        print(msg)
+        #print(msg)
         log.info(f"Received message from websocket :> {msg}")
         return msg
 
@@ -69,7 +69,12 @@ class PSClient:
             msg = ['/trn ' + self.uName + ',0,' + assertion]
             await self.sendMSG('',msg)
             msg = await self.recvMSG()
+            #print(msg)
             log.info("Successfully Logged In!")
+            await self.sendMSG('',['/join lobby'])
+            while True:
+                msg = await self.recvMSG()
+                print('**',msg)
         else:
             log.error(f"Could not log in\nDetails : {response.content}")
 
