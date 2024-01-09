@@ -36,11 +36,12 @@ class PSClient:
         self.pokemon = [{},{},{},{},{},{}]
         self.active_pkmn = [{},{}]
         self.battleStart = False
-        self.inBattle = False
+        self.inBattle = True
         self.player = 1
         self.self_switch = False
         self.turn = 1
-        self.frmat = ''
+        self.frmat = []
+        self.currentBattle = ''
 
     def p(self):
         print("done")
@@ -56,22 +57,39 @@ class PSClient:
         log.info(f"Received message from websocket :> {msg}")
 
         if '|updatesearch|' in msg:
+            print('here')
             text = msg.replace('|updatesearch|','')
             text = json.loads(text)
-            if text['games'] != None and self.frmat != '':
-                self.battles.append()
+            print(text,'\n',self.frmat)
+            if text['games'] != None and self.frmat != []:
+                print('Here')
+                for i in text['games'].keys():
+                    if i in self.battles:
+                        continue
+                    self.battles = text['games'].keys()
+                print(self.battles)
+
+        if '>battle' in msg:
+            for i in self.battles:
+                if i in msg:
+                    self.currentBattle = i
+                    break
+            print('battle room code - ',self.currentBattle)
+
 
         if '|pm|' in msg:
             text = (msg.split('|pm|'))[1].split('|')
             sender = text[0][1:]
             if '/challenge ' in msg:
-                self.frmat = text[3]
-                if 'random' in self.frmat:
+                #print(f'Got Challenged by {sender}')
+                self.frmat.append(text[3])
+                if 'random' in self.frmat[-1]:
+                    #print('Accepting challenge')
                     await self.sendMSG('',['/utm null'])
                     await self.sendMSG('',[f'/accept {sender}'])
                     self.inBattle = True
                     return
-        
+                
         if self.inBattle and not self.battleStart:
             if f"|p2|{self.uName}" in msg:
                 self.player = 2
@@ -79,25 +97,34 @@ class PSClient:
                 self.battleStart = True
 
         if "|request|" in msg:
-            info = msg.split('\n')[1]
-            info = info.replace("|request|",'')
-            info = json.loads(info)
-            if info['active'][0]['moves'][0]['id'] == 'recharge':
-                await self.client.send("/choose move 1")
-            else:
+            #print(msg)
+            try:
+                info = msg.split('\n')[1]
+                info = info.replace("|request|",'')
+                info = json.loads(info)
+                print(info.keys())
                 await self.pkmn_info(info)
-                if "forceSwitch" in info.keys():
-                    if info['forceSwitch']:
+
+                try:
+                    if info['forceSwitch'] == [True]:
                         self.self_switch = True
                         await self.switch()
+                except:
+                    print('AHHHHHHH')
+
+                if info['active'][0]['moves'][0]['id'] == 'recharge':
+                    await self.client.send(f"{self.currentBattle}/choose move 1")
+                        
                 elif "wait" in info.keys():
                     if info['wait']:
                         return
-                    
+                        
+            except:
+                pass
         if "|switch|" in msg and not self.self_switch:
             self.opp_pkmn(msg)
-
         if self.battleStart:
+            print('Picking Move - turn = ',self.turn)
             if f"|turn|{self.turn}" in msg:
                 await self.pick_move()
             if f"|win|" in msg:
@@ -112,7 +139,7 @@ class PSClient:
         if '|updatechallenges|' in msg:
             print('*************************************************in')
             res = (msg.split('|updatechallenges|'))[1]
-            response = json.loads()
+            response = json.loads(res)
             print('------------------------------\n',response)
             #return '\n**************\n'+msg
         return msg
@@ -121,8 +148,12 @@ class PSClient:
         self.self_switch = False
         self.turn += 1
         num = [1,2,3,4]
-        pick = num.choice(num)
-        self.client.send(f'/choose move {pick}')
+        for i in range(4):
+            if self.active_pkmn[0]['moves'][i]['disabled']:
+                num.remove(i+1)
+        pick = choice(num)
+        log.info(f'Sending : {self.currentBattle}|/choose move {pick}')
+        await self.client.send(f'{self.currentBattle}|/choose move {pick}')
         return
     
     async def switch(self):
@@ -131,10 +162,12 @@ class PSClient:
             pick = choice(num)
             if self.pokemon[pick-1]['hp'] == '0 fnt':
                 num.remove(pick)
+            if self.pokemon[pick - 1]['active']:
+                num.remove(pick)
             else:
                 break
 
-        self.client.send(f'/choose switch {pick}')
+        await self.client.send(f'{self.currentBattle}|/choose switch {pick}')
 
     def opp_pkmn(self,msg):
         if self.player == 1:
@@ -152,7 +185,7 @@ class PSClient:
             info = info.strip()
             info = info.split("|")[0]
             self.active_pkmn[1]["name"] = info
-            self.active_pkmn[1]["type"] = pokedex[info.lower()]["types"]
+            self.active_pkmn[1]["type"] = pokedex[info.lower().replace(' ','')]["types"]
         
         print(self.active_pkmn)    
 
@@ -205,7 +238,11 @@ class PSClient:
             self.pokemon[j]['hp'] = msg['side']['pokemon'][j]['condition']
             self.pokemon[j]['active'] = msg['side']['pokemon'][j]['active']
             self.pokemon[j]['moves'] = msg['side']['pokemon'][j]['moves']
-            self.pokemon[j]['type'] = pokedex[((self.pokemon[j]['name'].lower()).replace('-','')).replace(" ",'')]['types']
+            try:
+                self.pokemon[j]['type'] = pokedex[((self.pokemon[j]['name'].lower()).replace('-','')).replace(" ",'')]['types']
+            except KeyError as e:
+                print(((self.pokemon[j]['name'].lower()).split('-'))[0].replace(" ",''))
+                self.pokemon[j]['type'] = pokedex[((self.pokemon[j]['name'].lower()).split('-'))[0].replace(" ",'')]['types']
         
         for i in self.pokemon:
             if i['active']:
